@@ -1,0 +1,53 @@
+Copyright (c) 2026 Christian T. Ferreira. All Rights Reserved.
+
+PROPRIETARY SOFTWARE LICENSE
+
+This software and associated documentation files (the "Software") are the
+exclusive property of Christian T. Ferreira and are protected by copyright
+law and international treaties.
+
+RESTRICTIONS:
+
+1. NO PERMISSION is granted to any person or entity to copy, modify,
+   distribute, sublicense, sell, publish, or create derivative works based
+   on this Software, in whole or in part, without the prior written
+   consent of the copyright holder.
+
+2. NO PERMISSION is granted to use this Software, its source code, or any
+   portion thereof for training, fine-tuning, or improving any artificial
+   intelligence model, machine learning system, large language model (LLM),
+   or any automated data collection system (including but not limited to
+   web scrapers, crawlers, and indexing bots).
+
+3. NO PERMISSION is granted to reverse engineer, decompile, disassemble,
+   or otherwise attempt to derive the source code, algorithms, or business
+   logic of this Software.
+
+4. This Software may not be used as a reference, template, or basis for
+   developing competing or similar products without explicit written
+   authorization from the copyright holder.
+
+5. Unauthorized use, reproduction, or distribution of this Software, or
+   any portion of it, may result in civil and criminal penalties and will
+   be prosecuted to the maximum extent possible under the law.
+
+AI TRAINING EXCLUSION:
+
+This repository and all its contents are explicitly excluded from use in
+any AI/ML training dataset. By accessing this repository, automated systems
+(including AI crawlers, dataset builders, and model trainers) acknowledge
+that they do NOT have permission to use, process, index, or learn from this
+code. This exclusion applies to all current and future AI systems regardless
+of their purpose or the entity operating them.
+
+DISCLAIMER:
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
+OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR PERFORMANCE OF THIS
+SOFTWARE.
+
+For licensing inquiries, contact the copyright holder.
