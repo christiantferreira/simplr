@@ -239,6 +239,197 @@ with st.sidebar:
     st.caption("Works with Xero | Works with QBO")
 
 
+# ─── Export Helper Functions ──────────────────────────────────────────────────
+
+def _export_xero(period_date, period_key, include_setup, cfg):
+    """Handle Xero export flow."""
+    journals = []
+
+    for result in st.session_state.results:
+        inp = result.input
+        ref = generate_reference("PP", period_date.year, period_date.month)
+
+        # Setup JE (if requested and period matches contract start)
+        if include_setup and inp.start_date.month == period_date.month and inp.start_date.year == period_date.year:
+            setup_j = build_prepaid_setup_journal(
+                setup_date=inp.start_date,
+                prepaid_amount=result.capitalized_amount,
+                gst_hst_itc=result.gst_hst_itc_amount,
+                description=inp.description,
+                asset_account_code=inp.asset_account_code,
+                cash_account_code=cfg["cash_account_code"],
+                gst_receivable_account_code=cfg["gst_receivable_account_code"],
+                tax_rate_name_asset=inp.xero_tax_rate_name,
+                tax_rate_name_gst="GST on Expenses" if result.gst_hst_itc_amount > ZERO else inp.xero_tax_rate_name,
+                reference=f"SIMPLR-PP-SETUP-{period_date.year:04d}-{period_date.month:02d}",
+                tracking_name=inp.tracking_name,
+                tracking_option=inp.tracking_option,
+            )
+            journals.append(setup_j)
+
+        # Amortization JE for this period
+        for line in result.schedule:
+            if line.period_date == period_date:
+                j = build_prepaid_amortization_journal(
+                    period_date=period_date,
+                    amortization_amount=line.amortization,
+                    description=f"{inp.description} - monthly amort",
+                    expense_account_code=inp.expense_account_code,
+                    asset_account_code=inp.asset_account_code,
+                    tax_rate_name=inp.xero_tax_rate_name,
+                    reference=ref,
+                    tracking_name=inp.tracking_name,
+                    tracking_option=inp.tracking_option,
+                )
+                journals.append(j)
+
+    if not journals:
+        st.warning("No journal entries found for this period.")
+        return
+
+    # Validate
+    validation = validate_xero_journals(
+        journals=journals,
+        configured_account_codes=cfg["account_codes"],
+        configured_tax_rate_names=cfg["xero_tax_rate_names"],
+        open_periods=get_open_periods(),
+        exported_periods=st.session_state.exported_periods,
+        require_tracking=bool(cfg.get("tracking_name")),
+    )
+
+    # Show validation results
+    if validation.errors:
+        st.error(f"Validation FAILED — {len(validation.errors)} error(s)")
+        for issue in validation.errors:
+            st.error(f"[{issue.code}] {issue.message}")
+    else:
+        st.success("Validation PASSED")
+
+    if validation.warnings:
+        for issue in validation.warnings:
+            st.warning(f"[{issue.code}] {issue.message}")
+
+    # Preview
+    csv_content = journals_to_csv(journals)
+    st.subheader("CSV Preview")
+    st.code(csv_content, language="csv")
+
+    # Summary
+    total_debits = sum(
+        line.amount for j in journals for line in j.lines if line.amount > ZERO
+    )
+    total_credits = sum(
+        line.amount for j in journals for line in j.lines if line.amount < ZERO
+    )
+    st.write(f"**Total Debits:** ${total_debits:,.2f} | **Total Credits:** ${abs(total_credits):,.2f} | **Net:** ${total_debits + total_credits:,.2f}")
+
+    # Download
+    if validation.is_valid:
+        export_hash = compute_export_hash(csv_content)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.download_button(
+                label="Download Xero CSV",
+                data=csv_content.encode("utf-8"),
+                file_name=f"Simplr_Xero_JE_{period_key}.csv",
+                mime="text/csv",
+                type="primary",
+                use_container_width=True,
+            )
+        with col2:
+            if st.button("Mark as Exported", use_container_width=True):
+                st.session_state.exported_periods.append(period_key)
+                st.success(f"Period {period_key} marked as exported. Hash: {export_hash[:12]}...")
+
+
+def _export_qbo(period_date, period_key, include_setup, cfg):
+    """Handle QBO export flow."""
+    journals = []
+    journal_no = 1
+
+    for result in st.session_state.results:
+        inp = result.input
+
+        # Setup JE
+        if include_setup and inp.start_date.month == period_date.month and inp.start_date.year == period_date.year:
+            setup_j = build_prepaid_setup_journal_qbo(
+                journal_no=journal_no,
+                setup_date=inp.start_date,
+                prepaid_amount=result.capitalized_amount,
+                gst_hst_itc=result.gst_hst_itc_amount,
+                description=inp.description,
+                asset_account_name=cfg["account_names"].get(inp.asset_account_code, inp.asset_account_code),
+                cash_account_name=cfg["account_names"].get(cfg["cash_account_code"], "Cash"),
+                gst_receivable_account_name=cfg["account_names"].get(cfg["gst_receivable_account_code"], "GST Receivable"),
+                class_name=inp.tracking_option,
+            )
+            journals.append(setup_j)
+            journal_no += 1
+
+        # Amortization JE
+        for line in result.schedule:
+            if line.period_date == period_date:
+                j = build_prepaid_amortization_journal_qbo(
+                    journal_no=journal_no,
+                    period_date=period_date,
+                    amortization_amount=line.amortization,
+                    description=f"{inp.description} - monthly amort",
+                    expense_account_name=cfg["account_names"].get(inp.expense_account_code, inp.expense_account_code),
+                    asset_account_name=cfg["account_names"].get(inp.asset_account_code, inp.asset_account_code),
+                    class_name=inp.tracking_option,
+                )
+                journals.append(j)
+                journal_no += 1
+
+    if not journals:
+        st.warning("No journal entries found for this period.")
+        return
+
+    # Validate
+    validation = validate_qbo_journals(
+        journals=journals,
+        configured_account_names=cfg["qbo_account_names"],
+        open_periods=get_open_periods(),
+        exported_periods=st.session_state.exported_periods,
+        require_class=bool(cfg.get("tracking_name")),
+    )
+
+    if validation.errors:
+        st.error(f"Validation FAILED — {len(validation.errors)} error(s)")
+        for issue in validation.errors:
+            st.error(f"[{issue.code}] {issue.message}")
+    else:
+        st.success("Validation PASSED")
+
+    if validation.warnings:
+        for issue in validation.warnings:
+            st.warning(f"[{issue.code}] {issue.message}")
+
+    csv_content = journals_to_csv_qbo(journals)
+    st.subheader("CSV Preview")
+    st.code(csv_content, language="csv")
+
+    total_debits = sum(line.debit for j in journals for line in j.lines)
+    total_credits = sum(line.credit for j in journals for line in j.lines)
+    st.write(f"**Total Debits:** ${total_debits:,.2f} | **Total Credits:** ${total_credits:,.2f}")
+
+    if validation.is_valid:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.download_button(
+                label="Download QBO CSV",
+                data=csv_content.encode("utf-8"),
+                file_name=f"Simplr_QBO_JE_{period_key}.csv",
+                mime="text/csv",
+                type="primary",
+                use_container_width=True,
+            )
+        with col2:
+            if st.button("Mark as Exported", use_container_width=True, key="qbo_mark"):
+                st.session_state.exported_periods.append(period_key)
+                st.success(f"Period {period_key} marked as exported.")
+
+
 # ─── Page: Setup ───────────────────────────────────────────────────────────────
 
 if page == "Setup":
@@ -552,8 +743,6 @@ elif page == "Report":
                 st.warning("No contract data found for this period.")
 
 
-# ─── Page: Export JE ───────────────────────────────────────────────────────────
-
 elif page == "Export JE":
     st.header("Export Journal Entries")
     st.caption("Select a period, validate, preview, and download CSV for Xero or QBO.")
@@ -588,192 +777,3 @@ elif page == "Export JE":
                 _export_xero(period_date, period_key, include_setup, cfg)
             else:
                 _export_qbo(period_date, period_key, include_setup, cfg)
-
-
-def _export_xero(period_date, period_key, include_setup, cfg):
-    """Handle Xero export flow."""
-    journals = []
-
-    for result in st.session_state.results:
-        inp = result.input
-        ref = generate_reference("PP", period_date.year, period_date.month)
-
-        # Setup JE (if requested and period matches contract start)
-        if include_setup and inp.start_date.month == period_date.month and inp.start_date.year == period_date.year:
-            setup_j = build_prepaid_setup_journal(
-                setup_date=inp.start_date,
-                prepaid_amount=result.capitalized_amount,
-                gst_hst_itc=result.gst_hst_itc_amount,
-                description=inp.description,
-                asset_account_code=inp.asset_account_code,
-                cash_account_code=cfg["cash_account_code"],
-                gst_receivable_account_code=cfg["gst_receivable_account_code"],
-                tax_rate_name_asset=inp.xero_tax_rate_name,
-                tax_rate_name_gst="GST on Expenses" if result.gst_hst_itc_amount > ZERO else inp.xero_tax_rate_name,
-                reference=f"SIMPLR-PP-SETUP-{period_date.year:04d}-{period_date.month:02d}",
-                tracking_name=inp.tracking_name,
-                tracking_option=inp.tracking_option,
-            )
-            journals.append(setup_j)
-
-        # Amortization JE for this period
-        for line in result.schedule:
-            if line.period_date == period_date:
-                j = build_prepaid_amortization_journal(
-                    period_date=period_date,
-                    amortization_amount=line.amortization,
-                    description=f"{inp.description} - monthly amort",
-                    expense_account_code=inp.expense_account_code,
-                    asset_account_code=inp.asset_account_code,
-                    tax_rate_name=inp.xero_tax_rate_name,
-                    reference=ref,
-                    tracking_name=inp.tracking_name,
-                    tracking_option=inp.tracking_option,
-                )
-                journals.append(j)
-
-    if not journals:
-        st.warning("No journal entries found for this period.")
-        return
-
-    # Validate
-    validation = validate_xero_journals(
-        journals=journals,
-        configured_account_codes=cfg["account_codes"],
-        configured_tax_rate_names=cfg["xero_tax_rate_names"],
-        open_periods=get_open_periods(),
-        exported_periods=st.session_state.exported_periods,
-        require_tracking=bool(cfg.get("tracking_name")),
-    )
-
-    # Show validation results
-    if validation.errors:
-        st.error(f"Validation FAILED — {len(validation.errors)} error(s)")
-        for issue in validation.errors:
-            st.error(f"[{issue.code}] {issue.message}")
-    else:
-        st.success("Validation PASSED")
-
-    if validation.warnings:
-        for issue in validation.warnings:
-            st.warning(f"[{issue.code}] {issue.message}")
-
-    # Preview
-    csv_content = journals_to_csv(journals)
-    st.subheader("CSV Preview")
-    st.code(csv_content, language="csv")
-
-    # Summary
-    total_debits = sum(
-        line.amount for j in journals for line in j.lines if line.amount > ZERO
-    )
-    total_credits = sum(
-        line.amount for j in journals for line in j.lines if line.amount < ZERO
-    )
-    st.write(f"**Total Debits:** ${total_debits:,.2f} | **Total Credits:** ${abs(total_credits):,.2f} | **Net:** ${total_debits + total_credits:,.2f}")
-
-    # Download
-    if validation.is_valid:
-        export_hash = compute_export_hash(csv_content)
-        col1, col2 = st.columns(2)
-        with col1:
-            st.download_button(
-                label="Download Xero CSV",
-                data=csv_content.encode("utf-8"),
-                file_name=f"Simplr_Xero_JE_{period_key}.csv",
-                mime="text/csv",
-                type="primary",
-                use_container_width=True,
-            )
-        with col2:
-            if st.button("Mark as Exported", use_container_width=True):
-                st.session_state.exported_periods.append(period_key)
-                st.success(f"Period {period_key} marked as exported. Hash: {export_hash[:12]}...")
-
-
-def _export_qbo(period_date, period_key, include_setup, cfg):
-    """Handle QBO export flow."""
-    journals = []
-    journal_no = 1
-
-    for result in st.session_state.results:
-        inp = result.input
-
-        # Setup JE
-        if include_setup and inp.start_date.month == period_date.month and inp.start_date.year == period_date.year:
-            setup_j = build_prepaid_setup_journal_qbo(
-                journal_no=journal_no,
-                setup_date=inp.start_date,
-                prepaid_amount=result.capitalized_amount,
-                gst_hst_itc=result.gst_hst_itc_amount,
-                description=inp.description,
-                asset_account_name=cfg["account_names"].get(inp.asset_account_code, inp.asset_account_code),
-                cash_account_name=cfg["account_names"].get(cfg["cash_account_code"], "Cash"),
-                gst_receivable_account_name=cfg["account_names"].get(cfg["gst_receivable_account_code"], "GST Receivable"),
-                class_name=inp.tracking_option,
-            )
-            journals.append(setup_j)
-            journal_no += 1
-
-        # Amortization JE
-        for line in result.schedule:
-            if line.period_date == period_date:
-                j = build_prepaid_amortization_journal_qbo(
-                    journal_no=journal_no,
-                    period_date=period_date,
-                    amortization_amount=line.amortization,
-                    description=f"{inp.description} - monthly amort",
-                    expense_account_name=cfg["account_names"].get(inp.expense_account_code, inp.expense_account_code),
-                    asset_account_name=cfg["account_names"].get(inp.asset_account_code, inp.asset_account_code),
-                    class_name=inp.tracking_option,
-                )
-                journals.append(j)
-                journal_no += 1
-
-    if not journals:
-        st.warning("No journal entries found for this period.")
-        return
-
-    # Validate
-    validation = validate_qbo_journals(
-        journals=journals,
-        configured_account_names=cfg["qbo_account_names"],
-        open_periods=get_open_periods(),
-        exported_periods=st.session_state.exported_periods,
-        require_class=bool(cfg.get("tracking_name")),
-    )
-
-    if validation.errors:
-        st.error(f"Validation FAILED — {len(validation.errors)} error(s)")
-        for issue in validation.errors:
-            st.error(f"[{issue.code}] {issue.message}")
-    else:
-        st.success("Validation PASSED")
-
-    if validation.warnings:
-        for issue in validation.warnings:
-            st.warning(f"[{issue.code}] {issue.message}")
-
-    csv_content = journals_to_csv_qbo(journals)
-    st.subheader("CSV Preview")
-    st.code(csv_content, language="csv")
-
-    total_debits = sum(line.debit for j in journals for line in j.lines)
-    total_credits = sum(line.credit for j in journals for line in j.lines)
-    st.write(f"**Total Debits:** ${total_debits:,.2f} | **Total Credits:** ${total_credits:,.2f}")
-
-    if validation.is_valid:
-        col1, col2 = st.columns(2)
-        with col1:
-            st.download_button(
-                label="Download QBO CSV",
-                data=csv_content.encode("utf-8"),
-                file_name=f"Simplr_QBO_JE_{period_key}.csv",
-                mime="text/csv",
-                type="primary",
-                use_container_width=True,
-            )
-        with col2:
-            if st.button("Mark as Exported", use_container_width=True, key="qbo_mark"):
-                st.session_state.exported_periods.append(period_key)
-                st.success(f"Period {period_key} marked as exported.")
