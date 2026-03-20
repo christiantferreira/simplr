@@ -5,7 +5,7 @@ Prepaid Expenses Module: Calculate, Report, Export
 
 import streamlit as st
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -115,8 +115,66 @@ with st.sidebar:
     )
 
     st.divider()
+
+    # ── Save Session ──
+    st.download_button(
+        label="Save Session",
+        data=_serialize_session(),
+        file_name=f"simplr_session_{date.today().isoformat()}.json",
+        mime="application/json",
+        use_container_width=True,
+    )
+
+    # ── Load Session ──
+    uploaded = st.file_uploader("Load Session", type=["json"], label_visibility="collapsed")
+    if uploaded is not None:
+        try:
+            _load_session(uploaded.read().decode("utf-8"))
+            st.success("Session loaded!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error loading session: {e}")
+
+    st.divider()
     st.caption("Phase 0 — Prepaid Expenses")
     st.caption("Works with Xero | Works with QBO")
+
+
+# ─── Save / Load Session ───────────────────────────────────────────────────────
+
+def _serialize_session() -> str:
+    """Serialize client_config, contracts, and exported_periods to JSON."""
+    data = {
+        "simplr_version": "0.1.0",
+        "saved_at": datetime.now().isoformat(),
+        "client_config": st.session_state.client_config,
+        "contracts": [],
+        "exported_periods": st.session_state.exported_periods,
+    }
+    for c in st.session_state.contracts:
+        cc = dict(c)
+        if isinstance(cc.get("start_date"), date):
+            cc["start_date"] = cc["start_date"].isoformat()
+        if isinstance(cc.get("end_date"), date):
+            cc["end_date"] = cc["end_date"].isoformat()
+        data["contracts"].append(cc)
+    return json.dumps(data, indent=2, default=str)
+
+
+def _load_session(raw: str):
+    """Load session from JSON string."""
+    data = json.loads(raw)
+    st.session_state.client_config = data["client_config"]
+    contracts = []
+    for c in data.get("contracts", []):
+        if isinstance(c.get("start_date"), str):
+            c["start_date"] = date.fromisoformat(c["start_date"])
+        if isinstance(c.get("end_date"), str):
+            c["end_date"] = date.fromisoformat(c["end_date"])
+        contracts.append(c)
+    st.session_state.contracts = contracts
+    st.session_state.exported_periods = data.get("exported_periods", [])
+    recalculate_all()
 
 
 # ─── Helper Functions ──────────────────────────────────────────────────────────
