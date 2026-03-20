@@ -93,90 +93,6 @@ PROVINCE_TAX = {
     "YT": {"gst_hst_rate": "5", "pst_rate": "0", "label": "YT (GST 5%)"},
 }
 
-# ─── Sidebar ───────────────────────────────────────────────────────────────────
-
-with st.sidebar:
-    st.markdown(
-        """
-        <div style="text-align:center; padding: 1rem 0;">
-            <span style="font-size: 2rem; color: #7C6AED;">✦</span>
-            <h1 style="color: #1E1052; margin: 0; font-size: 1.5rem;">Simplr</h1>
-            <p style="color: #6B7280; font-size: 0.85rem; margin-top: 0.25rem;">Accounting schedules, simplified.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.divider()
-
-    page = st.radio(
-        "Navigation",
-        ["Setup", "Prepaid Entry", "Schedule View", "Report", "Export JE"],
-        label_visibility="collapsed",
-    )
-
-    st.divider()
-
-    # ── Save Session ──
-    st.download_button(
-        label="Save Session",
-        data=_serialize_session(),
-        file_name=f"simplr_session_{date.today().isoformat()}.json",
-        mime="application/json",
-        use_container_width=True,
-    )
-
-    # ── Load Session ──
-    uploaded = st.file_uploader("Load Session", type=["json"], label_visibility="collapsed")
-    if uploaded is not None:
-        try:
-            _load_session(uploaded.read().decode("utf-8"))
-            st.success("Session loaded!")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Error loading session: {e}")
-
-    st.divider()
-    st.caption("Phase 0 — Prepaid Expenses")
-    st.caption("Works with Xero | Works with QBO")
-
-
-# ─── Save / Load Session ───────────────────────────────────────────────────────
-
-def _serialize_session() -> str:
-    """Serialize client_config, contracts, and exported_periods to JSON."""
-    data = {
-        "simplr_version": "0.1.0",
-        "saved_at": datetime.now().isoformat(),
-        "client_config": st.session_state.client_config,
-        "contracts": [],
-        "exported_periods": st.session_state.exported_periods,
-    }
-    for c in st.session_state.contracts:
-        cc = dict(c)
-        if isinstance(cc.get("start_date"), date):
-            cc["start_date"] = cc["start_date"].isoformat()
-        if isinstance(cc.get("end_date"), date):
-            cc["end_date"] = cc["end_date"].isoformat()
-        data["contracts"].append(cc)
-    return json.dumps(data, indent=2, default=str)
-
-
-def _load_session(raw: str):
-    """Load session from JSON string."""
-    data = json.loads(raw)
-    st.session_state.client_config = data["client_config"]
-    contracts = []
-    for c in data.get("contracts", []):
-        if isinstance(c.get("start_date"), str):
-            c["start_date"] = date.fromisoformat(c["start_date"])
-        if isinstance(c.get("end_date"), str):
-            c["end_date"] = date.fromisoformat(c["end_date"])
-        contracts.append(c)
-    st.session_state.contracts = contracts
-    st.session_state.exported_periods = data.get("exported_periods", [])
-    recalculate_all()
-
-
 # ─── Helper Functions ──────────────────────────────────────────────────────────
 
 def safe_decimal(value: str, default: str = "0") -> Decimal:
@@ -237,6 +153,90 @@ def recalculate_all():
         except Exception as e:
             st.error(f"Error calculating {contract.get('description', 'unknown')}: {e}")
     st.session_state.results = results
+
+
+# ─── Save / Load Session ───────────────────────────────────────────────────────
+
+def _serialize_session() -> str:
+    """Serialize client_config, contracts, and exported_periods to JSON."""
+    data = {
+        "simplr_version": "0.1.0",
+        "saved_at": datetime.now().isoformat(),
+        "client_config": st.session_state.client_config,
+        "contracts": [],
+        "exported_periods": st.session_state.exported_periods,
+    }
+    for c in st.session_state.contracts:
+        cc = dict(c)
+        if isinstance(cc.get("start_date"), date):
+            cc["start_date"] = cc["start_date"].isoformat()
+        if isinstance(cc.get("end_date"), date):
+            cc["end_date"] = cc["end_date"].isoformat()
+        data["contracts"].append(cc)
+    return json.dumps(data, indent=2, default=str)
+
+
+def _load_session(raw: str):
+    """Load session from JSON string."""
+    data = json.loads(raw)
+    st.session_state.client_config = data["client_config"]
+    contracts = []
+    for c in data.get("contracts", []):
+        if isinstance(c.get("start_date"), str):
+            c["start_date"] = date.fromisoformat(c["start_date"])
+        if isinstance(c.get("end_date"), str):
+            c["end_date"] = date.fromisoformat(c["end_date"])
+        contracts.append(c)
+    st.session_state.contracts = contracts
+    st.session_state.exported_periods = data.get("exported_periods", [])
+    recalculate_all()
+
+
+# ─── Sidebar ───────────────────────────────────────────────────────────────────
+
+with st.sidebar:
+    st.markdown(
+        """
+        <div style="text-align:center; padding: 1rem 0;">
+            <span style="font-size: 2rem; color: #7C6AED;">✦</span>
+            <h1 style="color: #1E1052; margin: 0; font-size: 1.5rem;">Simplr</h1>
+            <p style="color: #6B7280; font-size: 0.85rem; margin-top: 0.25rem;">Accounting schedules, simplified.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.divider()
+
+    page = st.radio(
+        "Navigation",
+        ["Setup", "Prepaid Entry", "Schedule View", "Report", "Export JE"],
+        label_visibility="collapsed",
+    )
+
+    st.divider()
+
+    # ── Save Session ──
+    st.download_button(
+        label="Save Session",
+        data=_serialize_session(),
+        file_name=f"simplr_session_{date.today().isoformat()}.json",
+        mime="application/json",
+        use_container_width=True,
+    )
+
+    # ── Load Session ──
+    uploaded = st.file_uploader("Load Session", type=["json"], label_visibility="collapsed")
+    if uploaded is not None:
+        try:
+            _load_session(uploaded.read().decode("utf-8"))
+            st.success("Session loaded!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error loading session: {e}")
+
+    st.divider()
+    st.caption("Phase 0 — Prepaid Expenses")
+    st.caption("Works with Xero | Works with QBO")
 
 
 # ─── Page: Setup ───────────────────────────────────────────────────────────────
